@@ -1,0 +1,3 @@
+Solution Index:        0
+Best Soln. Parameters: [ 4.87935653 -1.00785546  3.27111727 -0.75975151 -1.98176524  1.48374876]
+Best Prediction:       44.00908841727251

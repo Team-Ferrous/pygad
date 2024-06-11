@@ -11,9 +11,10 @@ from dotenv   import load_dotenv, dotenv_values
 import pygad # Artificial Machine Learning
 from merkly.mtree import MerkleTree   
 from typing import Callable
+import numpy
 
 load_dotenv()
-with open('GA_Options.yml', 'r') as f:
+with open('GA_Options.yaml', 'r') as f:
     GAData = yaml.load(f, Loader=yaml.SafeLoader)
 
 # accessing supabase
@@ -49,8 +50,7 @@ def login_user(email, password):
     access_token = supabase.auth.sign_in_with_password({"email": email, "password": password})
     localStorage.setItem("access_token", supabase.auth.get_session())
     index = load_from_cloud_data_bucket('MatterBucket', f'{st.session_state.username.split("@")[0]}/conversation_master.pdf', st.session_state["model"])
-    st.session_state.activate_chat = True
-
+  
 def logout_user():
     supabase.auth.sign_out()
 
@@ -63,13 +63,15 @@ def download(bucket_name, file_name, dl_path):
         res = supabase.storage.from_(bucket_name).download(dl_path)
         f.write(res)
 
-y = f(w1:w6) = w1x1 + w2x2 + w3x3 + w4x4 + w5x5 + w6x6
-where (x1,x2,x3,x4,x5,x6)=(4,-2,3.5,5,-11,-4.7) and y=44
+#Example Case:
+#y = f(w1:w6) = w1x1 + w2x2 + w3x3 + w4x4 + w5x5 + w6x6
+#where (x1,x2,x3,x4,x5,x6)=(4,-2,3.5,5,-11,-4.7) and y=44
 
 mhash_function: Callable[[bytes, bytes], bytes] = lambda x, y: x + y
-function_inputs = [4,-2,3.5,5,-11,-4.7]
+function_inputs = [4, -2, 3.5, 5, -11,-4.7]
 desired_output  = 44
-mtree           = MerkleTree(function_inputs, mhash_function)
+bytes_inputs    = ['a', 'b', 'c', 'd']
+mtree           = MerkleTree(bytes_inputs, mhash_function)
 
 #functions
 def fitness_func(ga_instance, solution, solution_idx):
@@ -77,8 +79,12 @@ def fitness_func(ga_instance, solution, solution_idx):
     fitness = 1.0 / numpy.abs(output - desired_output)
     return fitness
 
+input_image  = []
+target_image = [] # numpy array of an image 
 fitness_function   = fitness_func
 num_genes = len(function_inputs)
+
+#use DWT? or DCT?
 
 ga_instance = pygad.GA(num_generations=GAData['NUM_GENERATIONS'],
                        num_parents_mating=GAData['NUM_PARENTS_MATING'],
@@ -102,11 +108,19 @@ prediction = numpy.sum(numpy.array(function_inputs)*solution)
 print("Predicted output based on the best solution : {prediction}".format(prediction=prediction))
 
 #save results to .txt file(s)
-leaves = assert mtree.leaves
-with NamedTemporaryFile(dir='.', suffix='.txt') as f:
-    with NamedTemporaryFile(dir='.', suffix='.txt') as r:
-            r.write(leaves)
-            f.write(prediction)
+#leaves = mtree.leaves
+#with NamedTemporaryFile(dir='.', suffix='.txt') as f:
+#with NamedTemporaryFile(dir='.', suffix='.txt') as r:
+
+            #r.write(leaves)
+with open("predictions.txt", "w") as file1:
+        file1.write(f"Solution Index:        {solution_idx}\n")
+        file1.write(f"Best Soln. Parameters: {solution}\n")
+        file1.write(f"Best Prediction:       {prediction}")
+
+with open("predictions_mtree.txt", "w") as file1:
+        file1.write(f"{mtree.leaves}")
+
         
 '''
 # X, Y, and Z location to set
