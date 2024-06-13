@@ -12,6 +12,8 @@ import pygad # Artificial Machine Learning
 from merkly.mtree import MerkleTree   
 from typing import Callable
 import numpy
+from PIL import Image
+import argparse
 
 load_dotenv()
 with open('GA_Options.yaml', 'r') as f:
@@ -23,22 +25,27 @@ url: str           = os.getenv("SUPABASE_URL")
 key: str           = os.getenv("SUPABASE_KEY")
 supabase: S.Client = S.create_client(url, key)
 
+parser = argparse.ArgumentParser()
+parser.add_argument("square", help="display a square of a given number", type=int)
+args = parser.parse_args()
+print(args.square**2)
+
 # Supabase Functions (Auth, Database, Datastore)
 def query():
     data = supabase.auth.get_session()
     if data is not None:
-        response = supabase.table('memories').select("associated_emotions").execute()
+        response = supabase.table('metadata').select("associated_emotions").execute()
     return response
 
 def insert(id:int, mem:[str]):
     d = supabase.auth.get_session()
     if d is not None:
-        data, count = supabase.table('memories').insert({"id": id, "associated_memories": mem}).execute()
+        data, count = supabase.table('metadata').insert({"id": id, "associated_memories": mem}).execute()
 
 def update(id:int, mem:[str]):
     d = supabase.auth.get_session()
     if d is not None:
-        data, count = supabase.table('memories').update({"associated_memories": mem}).eq('id', id).execute()
+        data, count = supabase.table('metadata').update({"associated_memories": mem}).eq('id', id).execute()
 
 def register_user(email: str, password: str):
    supabase.auth.sign_up({
@@ -80,48 +87,60 @@ def fitness_func(ga_instance, solution, solution_idx):
     return fitness
 
 input_image  = []
-target_image = [] # numpy array of an image 
+target_image = Image.open("target.jpg")  # numpy array of an image 
 fitness_function   = fitness_func
 num_genes = len(function_inputs)
 
 #use DWT? or DCT?
+for x in GAData['NUM_ITERATIONS']:
+    ga_instance = pygad.GA(num_generations=GAData['NUM_GENERATIONS'],
+                        num_parents_mating=GAData['NUM_PARENTS_MATING'],
+                        fitness_func=fitness_function,
+                        sol_per_pop=GAData['SOL_PER_POP'],
+                        num_genes=num_genes,
+                        init_range_low=GAData['INIT_RANGE_LOW'],
+                        init_range_high=GAData['INIT_RANGE_HIGH'],
+                        parent_selection_type=GAData['PARENT_SELECTION_TYPE'],
+                        keep_parents=GAData['KEEP_PARENTS'],
+                        crossover_type=GAData['CROSSOVER_TYPE'],
+                        mutation_type=GAData['MUTATION_TYPE'],
+                        mutation_percent_genes=GAData['MUTATION_PERCENT_GENES'])
+    ga_instance.run()
 
-ga_instance = pygad.GA(num_generations=GAData['NUM_GENERATIONS'],
-                       num_parents_mating=GAData['NUM_PARENTS_MATING'],
-                       fitness_func=fitness_function,
-                       sol_per_pop=GAData['SOL_PER_POP'],
-                       num_genes=num_genes,
-                       init_range_low=GAData['INIT_RANGE_LOW'],
-                       init_range_high=GAData['INIT_RANGE_HIGH'],
-                       parent_selection_type=GAData['PARENT_SELECTION_TYPE'],
-                       keep_parents=GAData['KEEP_PARENTS'],
-                       crossover_type=GAData['CROSSOVER_TYPE'],
-                       mutation_type=GAData['MUTATION_TYPE'],
-                       mutation_percent_genes=GAData['MUTATION_PERCENT_GENES'])
-ga_instance.run()
+    solution, solution_fitness, solution_idx = ga_instance.best_solution()
+    print("Parameters of the best solution : {solution}".format(solution=solution))
+    print("Fitness value of the best solution = {solution_fitness}".format(solution_fitness=solution_fitness))
 
-solution, solution_fitness, solution_idx = ga_instance.best_solution()
-print("Parameters of the best solution : {solution}".format(solution=solution))
-print("Fitness value of the best solution = {solution_fitness}".format(solution_fitness=solution_fitness))
+    prediction = numpy.sum(numpy.array(function_inputs)*solution)
+    print("Predicted output based on the best solution : {prediction}".format(prediction=prediction))
 
-prediction = numpy.sum(numpy.array(function_inputs)*solution)
-print("Predicted output based on the best solution : {prediction}".format(prediction=prediction))
+    img = Image.open(sys.argv[1]).convert('L')
 
-#save results to .txt file(s)
-#leaves = mtree.leaves
-#with NamedTemporaryFile(dir='.', suffix='.txt') as f:
-#with NamedTemporaryFile(dir='.', suffix='.txt') as r:
+    im = numpy.array(img)
+    fft_mag = numpy.abs(numpy.fft.fftshift(numpy.fft.fft2(im)))
 
-            #r.write(leaves)
-with open("predictions.txt", "w") as file1:
-        file1.write(f"Solution Index:        {solution_idx}\n")
-        file1.write(f"Best Soln. Parameters: {solution}\n")
-        file1.write(f"Best Prediction:       {prediction}")
+    visual = numpy.log(fft_mag)
+    visual = (visual - visual.min()) / (visual.max() - visual.min())
 
-with open("predictions_mtree.txt", "w") as file1:
-        file1.write(f"{mtree.leaves}")
+    input_image = Image.fromarray((prediction * 255).astype(numpy.uint8))
+    input_image.save('out.bmp')
+
+    with open("predictions.txt", "w") as file1:
+            file1.write(f"Solution Index:        {solution_idx}\n")
+            file1.write(f"Best Soln. Parameters: {solution}\n")
+            file1.write(f"Best Prediction:       {prediction}")
+
+    with open("predictions_mtree.txt", "w") as file1:
+            file1.write(f"{mtree.leaves}")
 
         
+        
+    #save results to .txt file(s)
+    #leaves = mtree.leaves
+    #with NamedTemporaryFile(dir='.', suffix='.txt') as f:
+    #with NamedTemporaryFile(dir='.', suffix='.txt') as r:
+
+                #r.write(leaves)
 '''
 # X, Y, and Z location to set
 default_cube.location = (0.0, 0.0, 0.0)
