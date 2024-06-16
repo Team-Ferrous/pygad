@@ -1,10 +1,6 @@
 supabase       
-localStoragePy 
 pygad
 merkly
 pyyaml
 python-dotenv
-#pydwt
-#pydct
-#scipy 
 typing

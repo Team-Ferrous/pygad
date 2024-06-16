@@ -3,6 +3,7 @@ import supabase       as S
 
 # tools
 import os
+import sys
 import yaml
 from   tempfile import NamedTemporaryFile
 from   dotenv   import load_dotenv, dotenv_values 
@@ -17,9 +18,14 @@ import argparse
 
 load_dotenv()
 parser = argparse.ArgumentParser()
-parser.add_argument("square", help="display a square of a given number", type=int)
+parser.add_argument("--dct",                       help="Perform Discrete Cosine  Transform instead of FFT",              type=int)
+parser.add_argument("--dwt",                       help="Perform Discrete Wavelet Transform instead of FFT",              type=int)
+parser.add_argument("-t",  "--target",             help="Select target image for GA to train towards",                    type=int)
+parser.add_argument("-m",  "--output_trie",        help="Designate output file for generated Merkle Trie",                type=int)
+parser.add_argument("-p",  "--output_predictions", help="Designate output file for generated Predictions",                type=int)
+parser.add_argument("-i",  "--output_image",       help="Designate output filename for generated image",                  type=int)
 args = parser.parse_args()
-print(args.square**2)
+#print(args.square**2)
 
 with open('GA_Options.yaml', 'r') as f:
     GAData = yaml.load(f, Loader=yaml.SafeLoader)
@@ -28,6 +34,12 @@ with open('GA_Options.yaml', 'r') as f:
 url: str           = os.getenv("SUPABASE_URL")
 key: str           = os.getenv("SUPABASE_KEY")
 supabase: S.Client = S.create_client(url, key)
+
+mhash_function: Callable[[bytes, bytes], bytes] = lambda x, y: x + y
+function_inputs = [4, -2, 3.5, 5, -11,-4.7]
+desired_output  = 44
+bytes_inputs    = ['a', 'b', 'c', 'd', 'e', 'f']
+mtree           = MerkleTree(bytes_inputs, mhash_function)
 
 #Example Case:
 #y = f(w1:w6) = w1x1 + w2x2 + w3x3 + w4x4 + w5x5 + w6x6
@@ -48,12 +60,6 @@ supabase: S.Client = S.create_client(url, key)
 # # shorted hashed leaves
 # assert mtree.short_leaves == [b'a', b'b', b'c', b'd']
 
-mhash_function: Callable[[bytes, bytes], bytes] = lambda x, y: x + y
-function_inputs = [4, -2, 3.5, 5, -11,-4.7]
-desired_output  = 44
-bytes_inputs    = ['a', 'b', 'c', 'd']
-mtree           = MerkleTree(bytes_inputs, mhash_function)
-
 # Supabase Functions (Auth, Database, Datastore)
 def query():
     data = supabase.auth.get_session()
@@ -61,15 +67,24 @@ def query():
         response = supabase.table('metadata').select("associated_emotions").execute()
     return response
 
-def insert(id:int, mem:[str]):
+def insert(id:int, mem:[str], pred:[str]):
     d = supabase.auth.get_session()
     if d is not None:
-        data, count = supabase.table('metadata').insert({"id": id, "associated_memories": mem}).execute()
+        data, count = supabase.table('metadata').insert({"id": id, "solution": mem, "prediction":  pred}).execute()
 
 def update(id:int, mem:[str]):
     d = supabase.auth.get_session()
     if d is not None:
         data, count = supabase.table('metadata').update({"associated_memories": mem}).eq('id', id).execute()
+
+def upload(bucket_name, destination, source):
+    res  = supabase.storage.from_(bucket_name).update(destination, source)
+    return res
+    
+def download(bucket_name, file_name, dl_path):
+    with open(file_name, 'wb+') as f:
+        res = supabase.storage.from_(bucket_name).download(dl_path)
+        f.write(res)
 
 def register_user(email: str, password: str):
    supabase.auth.sign_up({
@@ -85,15 +100,6 @@ def login_user(email, password):
 def logout_user():
     supabase.auth.sign_out()
 
-def upload(bucket_name, destination, source):
-    res  = supabase.storage.from_(bucket_name).update(destination, source)
-    return res
-    
-def download(bucket_name, file_name, dl_path):
-    with open(file_name, 'wb+') as f:
-        res = supabase.storage.from_(bucket_name).download(dl_path)
-        f.write(res)
-
 #functions
 def fitness_func(ga_instance, solution, solution_idx):
     output = numpy.sum(solution*function_inputs)
@@ -106,8 +112,7 @@ def run():
     fitness_function   = fitness_func
     num_genes = len(function_inputs)
 
-    #use DWT? or DCT?
-    for x in GAData['NUM_ITERATIONS']:
+    for x in range(0, GAData['NUM_ITERATIONS']):
         ga_instance = pygad.GA(num_generations=GAData['NUM_GENERATIONS'],
                             num_parents_mating=GAData['NUM_PARENTS_MATING'],
                             fitness_func=fitness_function,
@@ -129,26 +134,28 @@ def run():
         prediction = numpy.sum(numpy.array(function_inputs)*solution)
         print("Predicted output based on the best solution : {prediction}".format(prediction=prediction))
 
-        img = Image.open(sys.argv[1]).convert('L')
-
+        img = Image.open('target.jpg').convert('L')
         im = numpy.array(img)
+        #use DWT? or DCT?
         fft_mag = numpy.abs(numpy.fft.fftshift(numpy.fft.fft2(im)))
 
-        visual = numpy.log(fft_mag)
-        visual = (visual - visual.min()) / (visual.max() - visual.min())
+        visual = numpy.log(fft_mag) * prediction
+        visual = (visual - visual.min()) / (visual.max() - visual.min()) * solution[x]
 
-        input_image = Image.fromarray((prediction * 255).astype(numpy.uint8))
+        input_image = Image.fromarray((visual * 255).astype(numpy.uint8))
         input_image.save('out.bmp')
 
-        with open("predictions.txt", "w") as file1:
+        with open("predictions.txt", "w+") as file1:
                 file1.write(f"Solution Index:        {solution_idx}\n")
                 file1.write(f"Best Soln. Parameters: {solution}\n")
-                file1.write(f"Best Prediction:       {prediction}")
+                file1.write(f"Best Prediction:       {prediction}\n\n")
 
-        with open("predictions_mtree.txt", "w") as file1:
-                file1.write(f"{mtree.leaves}")
+        with open("predictions_mtree.txt", "w+") as file1:
+                file1.write(f"Solution Index (mtree): {mtree.raw_leaves}\n")
 
-        
+    insert(GAData['NUM_ITERATIONS'], solution, prediction)
+run()
+
 '''
 # X, Y, and Z location to set
 default_cube.location = (0.0, 0.0, 0.0)
